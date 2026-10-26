@@ -413,7 +413,7 @@ if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
 }
 
 const canvas = document.getElementById('game');
-const ctx = canvas.getContext('2d');
+let ctx = canvas.getContext('2d');
 // group the canvas and its HUD into one 900x360 stage that scales as a unit,
 // so HUD/badges sit on the game area (not the screen edges) on any size
 const stageEl = document.createElement('div');
@@ -2762,7 +2762,7 @@ function drawMixedScene() {
   ctx.restore();
 }
 
-function drawBackground() {
+function drawBackdrop() {
   // twinkling stars
   ctx.save();
   for (const s of stars) {
@@ -2799,7 +2799,7 @@ function drawBackground() {
 
   // layered parallax mountains, far to near — or a themed scene for special levels
   ctx.save();
-  bgOffset -= speed * 0.15 * renderFrac;   // never wrapped: every layer wraps itself, so no layer jumps sideways
+  bgOffset = 0;   // backgrounds are a still image
   if (LEVEL.special === 'space') {
     drawSpaceScene();
   } else if (LEVEL.special === 'machine') {
@@ -2822,6 +2822,22 @@ function drawBackground() {
     }
   }
   ctx.restore();
+}
+// The sky + scenery never change, so draw them once per level into an offscreen canvas and just copy it each frame.
+let _bgCache = null, _bgKey = '';
+function drawBackground() {
+  const key = levelIndex + ':' + canvas.width + 'x' + canvas.height;
+  if (!_bgCache || _bgKey !== key) {
+    _bgKey = key;
+    if (!_bgCache) _bgCache = document.createElement('canvas');
+    _bgCache.width = canvas.width; _bgCache.height = canvas.height;
+    const real = ctx, savedFrame = frame;
+    ctx = _bgCache.getContext('2d');
+    ctx.setTransform(canvas.width / W, 0, 0, canvas.height / H, 0, 0);
+    frame = 0;
+    try { drawBackdrop(); } finally { ctx = real; frame = savedFrame; }
+  }
+  ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(_bgCache, 0, 0); ctx.restore();
 
   ctx.fillStyle = LEVEL.ground;
   ctx.fillRect(0, GROUND_Y, W, H - GROUND_Y);
