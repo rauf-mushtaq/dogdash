@@ -1731,7 +1731,7 @@ function drawThemedScene() {
     const N = ly.s === 'clouds' ? 5 : ly.s === 'towers' ? 9 : 8, sp = W / N, sw = ly.w || 1;
     if (ly.s !== 'clouds' && ly.s !== 'trees' && ly.s !== 'cactus' && ly.s !== 'weed' && ly.s !== 'tomb') ctx.fillRect(0, ly.b, W, GROUND_Y - ly.b);
     for (let i = -1; i < 2; i++) {
-      const base = bgOffset * ly.m + i * W;
+      const base = ((bgOffset * ly.m) % W) + i * W;
       for (let k = 0; k < N; k++) {
         const r = _hash(li * 50 + k), r2 = _hash(li * 90 + k + 7), cx = base + k * sp + sp / 2;
         if (cx < -140 || cx > W + 140) continue;
@@ -1744,7 +1744,7 @@ function drawThemedScene() {
             ctx.moveTo(cx + sw2, ly.b); ctx.lineTo(cx + sw2 * 1.7, ly.b - ht * .55); ctx.lineTo(cx + sw2 * 2.4, ly.b); ctx.fill(); break; }
           case 'towers': { const tw = sp * .8; ctx.fillRect(cx - tw / 2, ly.b - ht, tw, ht + (GROUND_Y - ly.b));
             ctx.fillStyle = ly.lit || 'rgba(255,200,120,.55)';
-            for (let wy = ly.b - ht + 8; wy < ly.b - 4; wy += 14) for (let wx = cx - tw / 2 + 5; wx < cx + tw / 2 - 6; wx += 11) if (_hash(wx * .13 + wy + k) > .55) ctx.fillRect(wx - base + base, wy, 5, 7);
+            { let row = 0; for (let wy = ly.b - ht + 8; wy < ly.b - 4; wy += 14, row++) { let col = 0; for (let wx = cx - tw / 2 + 5; wx < cx + tw / 2 - 6; wx += 11, col++) if (_hash(li * 131 + k * 17.3 + row * 7.7 + col * 3.1) > .55) ctx.fillRect(wx, wy, 5, 7); } }   // window pattern tied to the building, not to scroll position (it used to shimmer)
             ctx.fillStyle = ly.c; break; }
           case 'clouds': { const cy = ly.b + (r - .5) * 40; ctx.arc(cx, cy, ht * .5, 0, 6.3); ctx.arc(cx + ht * .55, cy + 6, ht * .38, 0, 6.3); ctx.arc(cx - ht * .55, cy + 8, ht * .34, 0, 6.3); ctx.fill(); break; }
           case 'trees': { ctx.fillRect(cx - 3, ly.b - ht, 6, ht + (GROUND_Y - ly.b));
@@ -2740,7 +2740,7 @@ function drawMixedScene() {
   ctx.save();
   ctx.globalAlpha = 0.22;
   ctx.fillStyle = LEVELS[0].mountains[1];
-  for (let i = -1; i < 2; i++) drawMountainRow(bgOffset * 0.35 + i * W, H - 140, 70, 6);
+  for (let i = -1; i < 2; i++) drawMountainRow(((bgOffset * 0.35) % W) + i * W, H - 140, 70, 6);
   ctx.restore();
 
   ctx.save();
@@ -2799,8 +2799,7 @@ function drawBackground() {
 
   // layered parallax mountains, far to near — or a themed scene for special levels
   ctx.save();
-  bgOffset -= speed * 0.15 * renderFrac;
-  if (bgOffset < -W) bgOffset += W;
+  bgOffset -= speed * 0.15 * renderFrac;   // never wrapped: every layer wraps itself, so no layer jumps sideways
   if (LEVEL.special === 'space') {
     drawSpaceScene();
   } else if (LEVEL.special === 'machine') {
@@ -2818,7 +2817,7 @@ function drawBackground() {
     for (const layer of layers) {
       ctx.fillStyle = layer.color;
       for (let i = -1; i < 2; i++) {
-        drawMountainRow(bgOffset * layer.mult + i * W, layer.baseY, layer.height, 6);
+        drawMountainRow(((bgOffset * layer.mult) % W) + i * W, layer.baseY, layer.height, 6);
       }
     }
   }
