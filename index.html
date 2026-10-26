@@ -411,13 +411,13 @@ if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
   navigator.serviceWorker.register(URL.createObjectURL(swBlob)).catch(() => {});
 }
 
-// build: smooth-frames v2 (even 120Hz pacing, pre-decoded level music, lighter iPad drawing)
+// build: smooth-frames v3 (even 120Hz pacing, pre-decoded level music, lighter iPad drawing)
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 if (/iPad|iPhone|Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1) {
-  // canvas shadowBlur is very slow in iPad Safari: keep the glow but make it cheap
+  // canvas shadowBlur is very slow in iPad Safari: switched off for speed
   const _sb = Object.getOwnPropertyDescriptor(CanvasRenderingContext2D.prototype, 'shadowBlur');
-  Object.defineProperty(ctx, 'shadowBlur', { get() { return _sb.get.call(this); }, set(v) { _sb.set.call(this, Math.min(v, 5)); } });
+  Object.defineProperty(ctx, 'shadowBlur', { get() { return _sb.get.call(this); }, set(v) { _sb.set.call(this, 0); } });
 }
 // group the canvas and its HUD into one 900x360 stage that scales as a unit,
 // so HUD/badges sit on the game area (not the screen edges) on any size
@@ -437,6 +437,8 @@ const CEILING_Y = 22;
 // re-rendered at the real on-screen pixel density so a 13" iPad stays sharp ----------
 canvas.style.width = W + 'px';
 canvas.style.height = H + 'px';
+// Performance mode: draw at the game's native 900x360 and let the screen scale it up (5x fewer pixels than retina)
+const RES_CAP = 1;
 function fitCanvasToScreen() {
   const wrap = document.getElementById('wrap');
   const cs = getComputedStyle(wrap);
@@ -444,7 +446,7 @@ function fitCanvasToScreen() {
   const availH = wrap.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
   const scale = Math.max(0.1, Math.min(availW / W, availH / H));
   stageEl.style.transform = 'scale(' + scale + ')';
-  const res = Math.max(1, Math.min(scale * (window.devicePixelRatio || 1), 2));
+  const res = Math.max(1, Math.min(scale * (window.devicePixelRatio || 1), RES_CAP));
   const cw = Math.round(W * res), ch = Math.round(H * res);
   if (canvas.width !== cw || canvas.height !== ch) {
     canvas.width = cw;
