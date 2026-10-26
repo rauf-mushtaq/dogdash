@@ -3684,7 +3684,11 @@ function render() {
 
 // Fixed 60 updates/second no matter the screen's refresh rate (the game logic is tuned per frame).
 const STEP_MS = 1000 / 60;
-let lastLoopTime = 0, stepAccum = 0, framePeriod = 1000 / 60, cyc = 0, drift = 0;
+let lastLoopTime = 0, stepAccum = 0, framePeriod = 1000 / 60, interpOn = false;
+// Optional URL switches:  ?hz=60 forces plain 60Hz mode,  ?hz=120 forces smooth mode,  ?debug shows a small fps readout
+const HZ_FORCE = (() => { try { const m = /[?&]hz=(\d+)/.exec(location.search); return m ? Number(m[1]) : 0; } catch (e) { return 0; } })();
+let dbgEl = null, dbgFrames = 0, dbgT = 0;
+try { if (/[?&]debug/.test(location.search)) { dbgEl = document.createElement('div'); dbgEl.style.cssText = 'position:absolute;top:4px;left:8px;z-index:9;font:600 11px monospace;color:#9f9;background:rgba(0,0,0,.55);padding:3px 6px;pointer-events:none'; stageEl.appendChild(dbgEl); } } catch (e) {}
 function loop(now) {
   requestAnimationFrame(loop);
   if (!now) now = performance.now();
@@ -3692,34 +3696,32 @@ function loop(now) {
   if (!lastLoopTime) { lastLoopTime = now; return; }
   const dt = Math.min(now - lastLoopTime, 100);
   lastLoopTime = now;
-  if (dt > 3 && dt < 40) framePeriod += (dt - framePeriod) * 0.08;   // smoothed screen refresh interval
-  const ratio = STEP_MS / framePeriod;
-  const skip = Math.round(ratio);
-  if (skip >= 1 && Math.abs(ratio - skip) < 0.15) {
-    // 60Hz, or a 120Hz ProMotion iPad: the game logic ticks 60 times a second on an even frame cadence and
-    // EVERY screen frame is drawn (blended between updates), so a 120Hz screen shows 120 smooth frames a second
-    drift += dt;
-    if (cyc >= skip) cyc = 0;
-    if (cyc === 0) {
-      snapInterp();
-      let steps = 0;
-      do { update(); drift -= STEP_MS; steps++; } while (drift > STEP_MS * 1.5 && steps < 3);   // catch up after a hiccup
-      if (drift > STEP_MS * 3 || drift < -STEP_MS) drift = 0;
-    }
-    renderAlpha = skip > 1 ? (cyc + 1) / skip : 1;
-    renderFrac = 1 / skip;
-    render();
+  if (dt > 3 && dt < 40) framePeriod += (dt - framePeriod) * 0.05;   // smoothed screen refresh interval
+  // smooth mode only on a fast (about 90Hz+) screen; hysteresis stops it flipping back and forth
+  if (HZ_FORCE) interpOn = HZ_FORCE > 80;
+  else if (framePeriod < 12.5) interpOn = true;
+  else if (framePeriod > 14.5) interpOn = false;
+  if (dbgEl) { dbgFrames++; if (now - dbgT > 1000) { dbgEl.textContent = Math.round(dbgFrames * 1000 / (now - dbgT)) + ' fps · ' + (interpOn ? 'smooth' : '60Hz') + ' · ' + framePeriod.toFixed(1) + 'ms'; dbgFrames = 0; dbgT = now; } }
+  if (!interpOn) {
     renderAlpha = 1; renderFrac = 1;
-    cyc++;
+    if (dt > 13.5 && dt < 20.5) { stepAccum = 0; update(); render(); return; }   // a normal 60Hz frame: exactly one update
+    stepAccum += dt;
+    let steps = 0;
+    while (stepAccum >= STEP_MS - 0.5 && steps < 4) { update(); stepAccum -= STEP_MS; steps++; }
+    if (stepAccum > STEP_MS) stepAccum = 0;
+    if (steps > 0) render();
     return;
   }
-  // odd refresh rates: fixed-timestep accumulator
-  cyc = 0; drift = 0; renderAlpha = 1; renderFrac = 1;
+  // fast screen: the game logic ticks 60 times a second by REAL time (so dropped frames never slow the game),
+  // and every screen frame is drawn blended between the last two updates
   stepAccum += dt;
   let steps = 0;
-  while (stepAccum >= STEP_MS - 0.5 && steps < 4) { update(); stepAccum -= STEP_MS; steps++; }
-  if (stepAccum > STEP_MS) stepAccum = 0;
-  if (steps > 0) render();
+  while (stepAccum >= STEP_MS && steps < 4) { snapInterp(); update(); stepAccum -= STEP_MS; steps++; }
+  if (stepAccum > STEP_MS * 2) stepAccum = 0;
+  renderAlpha = Math.min(1, stepAccum / STEP_MS);
+  renderFrac = Math.min(2, dt / STEP_MS);
+  render();
+  renderAlpha = 1; renderFrac = 1;
 }
 
 resetPlayer();
