@@ -2799,7 +2799,7 @@ function drawBackground() {
 
   // layered parallax mountains, far to near — or a themed scene for special levels
   ctx.save();
-  bgOffset -= speed * 0.15;
+  bgOffset -= speed * 0.15 * renderFrac;
   if (bgOffset < -W) bgOffset += W;
   if (LEVEL.special === 'space') {
     drawSpaceScene();
@@ -2834,7 +2834,7 @@ function drawBackground() {
     ctx.fillRect(0, CEILING_Y - 4, W, 4);
   }
 
-  groundOffset -= speed;
+  groundOffset -= speed * renderFrac;
   if (groundOffset < -40) groundOffset += 40;
   ctx.fillStyle = 'rgba(255,255,255,0.05)';
   for (let x = groundOffset; x < W; x += 40) {
@@ -3626,7 +3626,7 @@ function update() {
   }
 }
 
-function render() {
+function renderScene() {
   ctx.clearRect(0, 0, W, H);
   drawBackground();
   for (const o of obstacles) {
@@ -3653,32 +3653,72 @@ function render() {
   drawFlash();
 }
 
-// Fixed 60 updates/second no matter the screen's refresh rate. The game logic
-// is tuned per-frame, so on a 120Hz iPad Pro it ran twice as fast before.
+// ---------- 120Hz (ProMotion) smooth rendering: the game logic stays at 60 updates/sec, but on a 120Hz screen every
+// frame is drawn, with positions blended between the previous and current update ----------
+let renderAlpha = 1, renderFrac = 1;
+function snapInterp() {
+  player._px = player.x; player._py = player.y; player._pr = player.rotation;
+  for (const o of obstacles) { o._px = o.x; o._py = o.y; }
+  for (const p of particles) { p._px = p.x; p._py = p.y; }
+}
+function lerpObj(o, a) {
+  if (typeof o._px === 'number' && typeof o.x === 'number' && o._px !== o.x && Math.abs(o.x - o._px) < 80) { o._cx = o.x; o.x = o._px + (o.x - o._px) * a; o._ix = true; }
+  if (typeof o._py === 'number' && typeof o.y === 'number' && o._py !== o.y && Math.abs(o.y - o._py) < 80) { o._cy = o.y; o.y = o._py + (o.y - o._py) * a; o._iy = true; }
+}
+function unlerpObj(o) {
+  if (o._ix) { o.x = o._cx; o._ix = false; }
+  if (o._iy) { o.y = o._cy; o._iy = false; }
+}
+function render() {
+  if (renderAlpha >= 1) { renderScene(); return; }
+  const a = renderAlpha;
+  lerpObj(player, a);
+  if (typeof player._pr === 'number' && Math.abs(player.rotation - player._pr) < 3) { player._cr = player.rotation; player.rotation = player._pr + (player.rotation - player._pr) * a; player._ir = true; }
+  for (const o of obstacles) lerpObj(o, a);
+  for (const p of particles) lerpObj(p, a);
+  renderScene();
+  unlerpObj(player);
+  if (player._ir) { player.rotation = player._cr; player._ir = false; }
+  for (const o of obstacles) unlerpObj(o);
+  for (const p of particles) unlerpObj(p);
+}
+
+// Fixed 60 updates/second no matter the screen's refresh rate (the game logic is tuned per frame).
 const STEP_MS = 1000 / 60;
-let lastLoopTime = 0, stepAccum = 0;
+let lastLoopTime = 0, stepAccum = 0, framePeriod = 1000 / 60, cyc = 0, drift = 0;
 function loop(now) {
   requestAnimationFrame(loop);
   if (!now) now = performance.now();
   if (autoPaused) { lastLoopTime = 0; return; }
-  if (!lastLoopTime) lastLoopTime = now;
+  if (!lastLoopTime) { lastLoopTime = now; return; }
   const dt = Math.min(now - lastLoopTime, 100);
   lastLoopTime = now;
-  if (dt > 13.5 && dt < 20.5) {
-    // a normal 60Hz screen: exactly one update per frame, so motion stays perfectly even
-    stepAccum = 0;
-    update();
+  if (dt > 3 && dt < 40) framePeriod += (dt - framePeriod) * 0.08;   // smoothed screen refresh interval
+  const ratio = STEP_MS / framePeriod;
+  const skip = Math.round(ratio);
+  if (skip >= 1 && Math.abs(ratio - skip) < 0.15) {
+    // 60Hz, or a 120Hz ProMotion iPad: the game logic ticks 60 times a second on an even frame cadence and
+    // EVERY screen frame is drawn (blended between updates), so a 120Hz screen shows 120 smooth frames a second
+    drift += dt;
+    if (cyc >= skip) cyc = 0;
+    if (cyc === 0) {
+      snapInterp();
+      let steps = 0;
+      do { update(); drift -= STEP_MS; steps++; } while (drift > STEP_MS * 1.5 && steps < 3);   // catch up after a hiccup
+      if (drift > STEP_MS * 3 || drift < -STEP_MS) drift = 0;
+    }
+    renderAlpha = skip > 1 ? (cyc + 1) / skip : 1;
+    renderFrac = 1 / skip;
     render();
+    renderAlpha = 1; renderFrac = 1;
+    cyc++;
     return;
   }
-  // faster screens (e.g. 120Hz iPad Pro) or hiccups: keep the game at 60 updates per second
+  // odd refresh rates: fixed-timestep accumulator
+  cyc = 0; drift = 0; renderAlpha = 1; renderFrac = 1;
   stepAccum += dt;
   let steps = 0;
-  while (stepAccum >= STEP_MS - 0.5 && steps < 4) {
-    update();
-    stepAccum -= STEP_MS;
-    steps++;
-  }
+  while (stepAccum >= STEP_MS - 0.5 && steps < 4) { update(); stepAccum -= STEP_MS; steps++; }
   if (stepAccum > STEP_MS) stepAccum = 0;
   if (steps > 0) render();
 }
