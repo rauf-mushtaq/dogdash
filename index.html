@@ -44,7 +44,6 @@
   }
   #game {
     background: linear-gradient(180deg, #0a0e2e 0%, #241a52 28%, #5a2472 52%, #b13d7c 72%, #ff7a5c 90%, #ffb37a 100%);
-    box-shadow: 0 0 70px rgba(255, 130, 100, 0.3);
   }
   #stage { will-change: transform; position: relative; width: 900px; height: 360px; flex: none; transform-origin: center center; }
 
@@ -339,6 +338,8 @@ canvas.parentNode.insertBefore(stageEl, canvas);
 const W = canvas.width, H = canvas.height;
 const GROUND_Y = H - 60;
 const CEILING_Y = 22;
+let stageGeom = { top: 0, height: H };
+let pageColourKey = '';
 
 // ---------- Responsive scaling: the game keeps its 900x360 logical space; the
 // whole stage (canvas + HUD) is scaled to fit, and the canvas backing store is
@@ -352,6 +353,9 @@ function fitCanvasToScreen() {
   const availH = wrap.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
   const scale = Math.max(0.1, Math.min(availW / W, availH / H));
   stageEl.style.transform = 'scale(' + scale + ')';
+  // where the stage sits on screen, so the page around it can carry on the scene's colours
+  stageGeom = { top: parseFloat(cs.paddingTop) + (availH - H * scale) / 2, height: H * scale };
+  pageColourKey = '';
   const res = Math.max(1, Math.min(scale * (window.devicePixelRatio || 1), 2.25));
   const cw = Math.round(W * res), ch = Math.round(H * res);
   if (canvas.width !== cw || canvas.height !== ch) {
@@ -1603,7 +1607,7 @@ const LEVELS = [
     id: 'classic', label: '🌄 CLASSIC MEADOW', color: '#ffd76b',
     modes: ['dog', 'ship', 'spider', 'flappy', 'balloon'],
     sky: 'linear-gradient(180deg, #0a0e2e 0%, #241a52 28%, #5a2472 52%, #b13d7c 72%, #ff7a5c 90%, #ffb37a 100%)',
-    mountains: ['rgba(130,90,190,0.22)', 'rgba(255,120,140,0.16)', 'rgba(255,255,255,0.07)'],
+    mountains: ['rgba(190,140,255,0.4)', 'rgba(255,105,170,0.5)', 'rgba(70,20,115,0.88)'],
     ground: '#120a24', accent: '#ff6f61'
   },
   {
@@ -1661,6 +1665,7 @@ function setLevel(idx) {
   levelIndex = idx;
   LEVEL = LEVELS[idx];
   localStorage.setItem('dogdash_level', String(idx));
+  resetColours();
   applyLevelTheme();
 }
 
@@ -1668,16 +1673,17 @@ function setLevel(idx) {
 // ---------- Themed levels: generic parallax scene + particles ----------
 const _hash = (n) => { const x = Math.sin(n * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); };
 function drawThemedScene() {
-  const L = LEVEL;
+  const L = LEVEL, pal = levelPalette(L), dh = currentHue();
   if (L.orb) {
-    const o = L.orb, ox = o.x * W;
-    const g = ctx.createRadialGradient(ox, o.y, 0, ox, o.y, o.r * 3);
+    const o = L.orb, ox = o.x * W, gr = Math.min(o.r * 3, o.y);   // glow stays inside the top edge
+    const g = ctx.createRadialGradient(ox, o.y, 0, ox, o.y, gr);
     g.addColorStop(0, o.c); g.addColorStop(1, 'rgba(255,255,255,0)');
-    ctx.globalAlpha = .5; ctx.fillStyle = g; ctx.beginPath(); ctx.arc(ox, o.y, o.r * 3, 0, 6.3); ctx.fill();
+    ctx.globalAlpha = .5; ctx.fillStyle = g; ctx.beginPath(); ctx.arc(ox, o.y, gr, 0, 6.3); ctx.fill();
     ctx.globalAlpha = 1; ctx.fillStyle = o.c; ctx.beginPath(); ctx.arc(ox, o.y, o.r, 0, 6.3); ctx.fill();
   }
   L.layers.forEach((ly, li) => {
-    ctx.fillStyle = ly.c;
+    const col = hslStr(pal.layers[li], dh);
+    ctx.fillStyle = col;
     const N = ly.s === 'clouds' ? 5 : ly.s === 'towers' ? 9 : 8, sp = W / N, sw = ly.w || 1;
     if (ly.s !== 'clouds' && ly.s !== 'trees' && ly.s !== 'cactus' && ly.s !== 'weed' && ly.s !== 'tomb') ctx.fillRect(0, ly.b, W, GROUND_Y - ly.b);
     for (let i = -1; i < 2; i++) {
@@ -1695,10 +1701,10 @@ function drawThemedScene() {
           case 'towers': { const tw = sp * .8; ctx.fillRect(cx - tw / 2, ly.b - ht, tw, ht + (GROUND_Y - ly.b));
             ctx.fillStyle = ly.lit || 'rgba(255,200,120,.55)';
             { let row = 0; for (let wy = ly.b - ht + 8; wy < ly.b - 4; wy += 14, row++) { let col = 0; for (let wx = cx - tw / 2 + 5; wx < cx + tw / 2 - 6; wx += 11, col++) if (_hash(li * 131 + k * 17.3 + row * 7.7 + col * 3.1) > .55) ctx.fillRect(wx, wy, 5, 7); } }   // window pattern tied to the building, not to scroll position (it used to shimmer)
-            ctx.fillStyle = ly.c; break; }
+            ctx.fillStyle = col; break; }
           case 'clouds': { const cy = ly.b + (r - .5) * 40; ctx.arc(cx, cy, ht * .5, 0, 6.3); ctx.arc(cx + ht * .55, cy + 6, ht * .38, 0, 6.3); ctx.arc(cx - ht * .55, cy + 8, ht * .34, 0, 6.3); ctx.fill(); break; }
           case 'trees': { ctx.fillRect(cx - 3, ly.b - ht, 6, ht + (GROUND_Y - ly.b));
-            if (ly.dead) { ctx.lineWidth = 3; ctx.strokeStyle = ly.c; ctx.moveTo(cx, ly.b - ht * .6); ctx.lineTo(cx + 22, ly.b - ht); ctx.moveTo(cx, ly.b - ht * .4); ctx.lineTo(cx - 22, ly.b - ht * .8); ctx.stroke(); }
+            if (ly.dead) { ctx.lineWidth = 3; ctx.strokeStyle = col; ctx.moveTo(cx, ly.b - ht * .6); ctx.lineTo(cx + 22, ly.b - ht); ctx.moveTo(cx, ly.b - ht * .4); ctx.lineTo(cx - 22, ly.b - ht * .8); ctx.stroke(); }
             else { ctx.arc(cx, ly.b - ht, 24, 0, 6.3); ctx.arc(cx + 16, ly.b - ht + 14, 17, 0, 6.3); ctx.arc(cx - 16, ly.b - ht + 14, 17, 0, 6.3); ctx.fill(); } break; }
           case 'lolly': { ctx.fillRect(cx - 2, ly.b - ht, 4, ht + (GROUND_Y - ly.b)); ctx.arc(cx, ly.b - ht, 18, 0, 6.3); ctx.fill(); break; }
           case 'weed': ctx.moveTo(cx - 5, GROUND_Y); ctx.quadraticCurveTo(cx + Math.sin(frame * .04 + k) * 12, ly.b - ht * .5, cx, ly.b - ht); ctx.quadraticCurveTo(cx + 3, ly.b - ht * .5, cx + 5, GROUND_Y); ctx.fill(); break;
@@ -1801,6 +1807,7 @@ const HOW_TO_PLAY = `
 function showMenu() {
   currentScreen = 'menu';
   if (isLevelLocked(levelIndex)) setLevel(0);
+  resetColours();   // the menu previews the level in its starting colours
   overlay.innerHTML = `
     <div class="menuInner">
       <h1>🐶 DOG DASH</h1>
@@ -2323,6 +2330,7 @@ function checkCollisions() {
       if (rectsOverlap(player.x, player.y, player.size, player.size, o.x, 0, o.w, H)) {
         o.triggered = true;
         setMode(o.targetMode);
+        shiftColours(MODE_COLOR[o.targetMode]);
       }
     }
   }
@@ -2518,6 +2526,7 @@ function startGame() {
   grace = 0;
   ALL_MODES = LEVEL.modes.slice();
   applyLevelTheme();
+  resetColours();
   zoneMode = 'dog';
   zoneRemaining = 1600;
   modeBadge.textContent = MODE_LABEL.dog;
@@ -2838,7 +2847,173 @@ function drawMixedScene() {
   ctx.restore();
 }
 
+// ---------- Colour phases: every portal sweeps the whole scene to a new colour ----------
+// Level colours are kept as hue/saturation/lightness so they can be rotated around the colour wheel.
+function parseColor(str) {
+  let r, g, b, a = 1, m = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(String(str).trim());
+  if (m) {
+    let hex = m[1];
+    if (hex.length === 3) hex = hex.split('').map(ch => ch + ch).join('');
+    r = parseInt(hex.slice(0, 2), 16); g = parseInt(hex.slice(2, 4), 16); b = parseInt(hex.slice(4, 6), 16);
+  } else if ((m = /rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*(?:,\s*([\d.]+))?\s*\)/i.exec(str))) {
+    r = +m[1]; g = +m[2]; b = +m[3];
+    if (m[4] !== undefined) a = +m[4];
+  } else {
+    return { h: 0, s: 0, l: 50, a: 1 };
+  }
+  r /= 255; g /= 255; b /= 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b), l = (max + min) / 2;
+  let h = 0, sat = 0;
+  if (max !== min) {
+    const d = max - min;
+    sat = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    h = 60 * (max === r ? (g - b) / d + (g < b ? 6 : 0) : max === g ? (b - r) / d + 2 : (r - g) / d + 4);
+  }
+  return { h, s: sat * 100, l: l * 100, a };
+}
+const clampN = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+function hslStr(c, dh, alpha) {
+  const h = (((c.h + (dh || 0)) % 360) + 360) % 360;
+  return `hsla(${h.toFixed(1)},${c.s.toFixed(1)}%,${c.l.toFixed(1)}%,${alpha === undefined ? c.a : alpha})`;
+}
+// each level's palette, made richer and brighter (the original colours were quite dark and grey)
+function levelPalette(L) {
+  if (L._pal) return L._pal;
+  const sky = [];
+  L.sky.replace(/(#[0-9a-f]{3,6})\s+([\d.]+)%/gi, (_, col, pct) => {
+    const c = parseColor(col);
+    sky.push({ at: Number(pct) / 100, c: { h: c.h, s: clampN(c.s < 20 ? c.s + 45 : c.s * 1.1 + 8, 0, 95), l: 14 + c.l * 0.86, a: 1 } });
+    return '';
+  });
+  const g = parseColor(L.ground), ac = parseColor(L.accent);
+  L._pal = {
+    sky,
+    ground: { h: g.h, s: clampN(g.s * 1.1 + 20, 0, 85), l: clampN(g.l * 0.8 + 15, 15, 40), a: 1 },
+    accent: { h: ac.h, s: clampN(ac.s, 60, 100), l: clampN(ac.l, 55, 80), a: 1 },
+    layers: (L.layers || []).map(ly => parseColor(ly.c)),
+    mountains: (L.mountains || []).map(parseColor),
+  };
+  return L._pal;
+}
+
+// hue offset (degrees) applied to the sky, scenery and ground; eases to its new value after a portal
+let hueShift = { from: 0, to: 0, t: 1 };
+let portalFlash = null;
+function currentHue() {
+  const t = hueShift.t, e = t * t * (3 - 2 * t);
+  return hueShift.from + (hueShift.to - hueShift.from) * e;
+}
+function shiftColours(flashColor) {
+  const h = currentHue();
+  let to = h + 100 + Math.random() * 80;   // a big jump, so every portal looks clearly different
+  // dark oranges and yellows come out muddy brown/olive, so skip past them if the top of the sky would land there
+  const topHue = () => ((levelPalette(LEVEL).sky[0].c.h + to) % 360 + 360) % 360;
+  for (let i = 0; i < 4 && topHue() > 22 && topHue() < 88; i++) to += 30;
+  hueShift = { from: h, to, t: 0 };
+  if (flashColor) portalFlash = { color: flashColor, life: 16, maxLife: 16 };
+}
+function resetColours() {
+  hueShift = { from: 0, to: 0, t: 1 };
+  portalFlash = null;
+}
+function tickColours() {
+  if (hueShift.t < 1) hueShift.t = Math.min(1, hueShift.t + 1 / 45);
+  if (portalFlash && --portalFlash.life <= 0) portalFlash = null;
+}
+function drawPortalFlash() {
+  if (!portalFlash) return;
+  ctx.globalAlpha = 0.28 * (portalFlash.life / portalFlash.maxLife);
+  ctx.fillStyle = portalFlash.color;
+  ctx.fillRect(0, 0, W, H);
+  ctx.globalAlpha = 1;
+}
+
+// 1 on each beat of the music, fading to 0 before the next one (0 while the music isn't running)
+function beatPulse() {
+  const g = AudioEngine.beatGrid();
+  if (!g || !(g.beat > 0)) return 0;
+  const t = AudioEngine.now() - AudioEngine.latency() - g.t0;
+  if (t < 0) return 0;
+  return Math.exp(-((t / g.beat) % 1) * 5);
+}
+
+function drawSky(pal, dh) {
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  for (const st of pal.sky) g.addColorStop(st.at, hslStr(st.c, dh));
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, W, GROUND_Y + 2);
+}
+
+// Paint the screen around the game (the bands above/below it on an iPad, or beside it on a wide
+// screen) in the scene's own sky and ground colours, so the colour fills the whole display.
+// Only touches the page style when the colours or the layout actually change.
+const wrapEl = document.getElementById('wrap');
+function skyColourAt(pal, at) {
+  const st = pal.sky;
+  if (at <= st[0].at) return st[0].c;
+  for (let i = 1; i < st.length; i++) {
+    if (at <= st[i].at) {
+      const a = st[i - 1], b = st[i], t = (at - a.at) / Math.max(1e-6, b.at - a.at);
+      let dh = b.c.h - a.c.h;
+      if (dh > 180) dh -= 360; else if (dh < -180) dh += 360;
+      return { h: a.c.h + dh * t, s: a.c.s + (b.c.s - a.c.s) * t, l: a.c.l + (b.c.l - a.c.l) * t, a: 1 };
+    }
+  }
+  return st[st.length - 1].c;
+}
+function groundColours(pal) {
+  const gc = pal.ground;
+  return [{ h: gc.h, s: gc.s, l: gc.l + 8, a: 1 }, { h: gc.h, s: gc.s, l: Math.max(5, gc.l - 9), a: 1 }];
+}
+function syncPageColours(pal, dh) {
+  const key = LEVEL.id + '|' + dh.toFixed(1) + '|' + stageGeom.top.toFixed(0) + '|' + stageGeom.height.toFixed(0);
+  if (key === pageColourKey) return;
+  pageColourKey = key;
+  const k = stageGeom.height / H, px = (y) => (stageGeom.top + y * k).toFixed(1) + 'px';
+  const stops = [hslStr(pal.sky[0].c, dh) + ' 0px'];
+  for (const st of pal.sky) if (st.at * H < GROUND_Y) stops.push(hslStr(st.c, dh) + ' ' + px(st.at * H));
+  stops.push(hslStr(skyColourAt(pal, GROUND_Y / H), dh) + ' ' + px(GROUND_Y));
+  const [gTop, gBottom] = groundColours(pal);
+  stops.push(hslStr(gTop, dh) + ' ' + px(GROUND_Y), hslStr(gBottom, dh) + ' ' + px(H), hslStr(gBottom, dh) + ' 100%');
+  wrapEl.style.background = 'linear-gradient(180deg, ' + stops.join(', ') + ')';
+}
+
+function drawGround(pal, dh, pulse) {
+  const ac = pal.accent;
+  // a soft glow rising off the floor that throbs with the beat
+  const glow = ctx.createLinearGradient(0, GROUND_Y - 80, 0, GROUND_Y);
+  glow.addColorStop(0, hslStr(ac, dh, 0));
+  glow.addColorStop(1, hslStr(ac, dh, 0.12 + 0.18 * pulse));
+  ctx.fillStyle = glow;
+  ctx.fillRect(0, GROUND_Y - 80, W, 80);
+
+  const [gTop, gBottom] = groundColours(pal);
+  const fill = ctx.createLinearGradient(0, GROUND_Y, 0, H);
+  fill.addColorStop(0, hslStr(gTop, dh));
+  fill.addColorStop(1, hslStr(gBottom, dh));
+  ctx.fillStyle = fill;
+  ctx.fillRect(0, GROUND_Y, W, H - GROUND_Y);
+
+  // brick-style tiles scrolling with the floor
+  groundOffset -= speed * renderFrac;
+  if (groundOffset < -40) groundOffset += 40;
+  ctx.fillStyle = 'rgba(255,255,255,0.09)';
+  for (let x = groundOffset; x < W; x += 40) ctx.fillRect(x + 2, GROUND_Y + 9, 36, 21);
+  ctx.fillStyle = 'rgba(255,255,255,0.05)';
+  for (let x = groundOffset - 20; x < W; x += 40) ctx.fillRect(x + 2, GROUND_Y + 34, 36, 21);
+
+  // glowing edge of the floor
+  ctx.fillStyle = hslStr(ac, dh, 0.22 + 0.3 * pulse);
+  ctx.fillRect(0, GROUND_Y - 4, W, 10);
+  ctx.fillStyle = hslStr({ h: ac.h, s: ac.s, l: Math.min(92, ac.l + 18), a: 1 }, dh);
+  ctx.fillRect(0, GROUND_Y, W, 3);
+}
+
 function drawBackground() {
+  const pal = levelPalette(LEVEL), dh = currentHue(), pulse = beatPulse();
+  drawSky(pal, dh);
+  syncPageColours(pal, dh);
+
   // twinkling stars
   ctx.save();
   for (const s of stars) {
@@ -2854,13 +3029,13 @@ function drawBackground() {
 
   // soft glowing moon (skipped on special-themed levels — their own scenery takes its place)
   if (!LEVEL.special) {
-    const moonX = W * 0.8, moonY = 58, moonR = 24;
-    const glow = ctx.createRadialGradient(moonX, moonY, 0, moonX, moonY, moonR * 4);
-    glow.addColorStop(0, 'rgba(255,244,214,0.55)');
+    const moonX = W * 0.8, moonY = 64, moonR = 24, glowR = moonY;   // glow stays inside the top edge
+    const glow = ctx.createRadialGradient(moonX, moonY, 0, moonX, moonY, glowR);
+    glow.addColorStop(0, 'rgba(255,244,214,0.6)');
     glow.addColorStop(1, 'rgba(255,244,214,0)');
     ctx.fillStyle = glow;
     ctx.beginPath();
-    ctx.arc(moonX, moonY, moonR * 4, 0, Math.PI * 2);
+    ctx.arc(moonX, moonY, glowR, 0, Math.PI * 2);
     ctx.fill();
     ctx.fillStyle = '#fff8e6';
     ctx.beginPath();
@@ -2886,23 +3061,20 @@ function drawBackground() {
     drawMixedScene();
   } else {
     const layers = [
-      { mult: 0.35, color: LEVEL.mountains[0], baseY: H - 150, height: 65 },
-      { mult: 0.6, color: LEVEL.mountains[1], baseY: H - 132, height: 82 },
-      { mult: 1.0, color: LEVEL.mountains[2], baseY: H - 120, height: 95 },
+      { mult: 0.25, color: hslStr(pal.mountains[0], dh), baseY: H - 125, height: 125, count: 5, seed: 1 },
+      { mult: 0.5, color: hslStr(pal.mountains[1], dh), baseY: H - 95, height: 95, count: 7, seed: 2 },
+      { mult: 0.9, color: hslStr(pal.mountains[2], dh), baseY: GROUND_Y + 2, height: 70, count: 9, seed: 3 },
     ];
     for (const layer of layers) {
       ctx.fillStyle = layer.color;
       for (let i = -1; i < 2; i++) {
-        drawMountainRow(((bgOffset * layer.mult) % W) + i * W, layer.baseY, layer.height, 6);
+        drawMountainRow(((bgOffset * layer.mult) % W) + i * W, layer.baseY, layer.height, layer.count, layer.seed);
       }
     }
   }
   ctx.restore();
 
-  ctx.fillStyle = LEVEL.ground;
-  ctx.fillRect(0, GROUND_Y, W, H - GROUND_Y);
-  ctx.fillStyle = LEVEL.accent;
-  ctx.fillRect(0, GROUND_Y, W, 4);
+  drawGround(pal, dh, pulse);
 
   if (running || gameOver) {
     if (mode === 'ship' || mode === 'drone') {
@@ -2914,23 +3086,19 @@ function drawBackground() {
       ctx.fillRect(0, CEILING_Y - 4, W, 4);
     }
   }
-
-  groundOffset -= speed * renderFrac;
-  if (groundOffset < -40) groundOffset += 40;
-  ctx.fillStyle = 'rgba(255,255,255,0.05)';
-  for (let x = groundOffset; x < W; x += 40) {
-    ctx.fillRect(x, GROUND_Y + 8, 20, H - GROUND_Y - 8);
-  }
 }
 
-function drawMountainRow(offset, baseY, height, count) {
-  const step = W / count;
+// a jagged mountain range one screen wide; it repeats seamlessly, and `seed` gives each layer its own shape
+function drawMountainRow(offset, baseY, height, count, seed) {
+  const step = W / count, valley = baseY - height * 0.1;
+  seed = seed || 0;
   ctx.beginPath();
   ctx.moveTo(offset, H);
-  for (let i = 0; i <= count; i++) {
-    const x = offset + i * step;
-    const y = baseY - Math.sin(i * 1.3) * height - height / 2;
-    ctx.lineTo(x, y);
+  ctx.lineTo(offset, valley);
+  for (let k = 0; k < count; k++) {
+    const r = _hash(seed * 37 + k), r2 = _hash(seed * 53 + k + 0.5);
+    ctx.lineTo(offset + (k + 0.3 + r2 * 0.4) * step, baseY - height * (0.45 + 0.55 * r));   // peak
+    ctx.lineTo(offset + (k + 1) * step, valley);
   }
   ctx.lineTo(offset + count * step, H);
   ctx.closePath();
@@ -2950,8 +3118,9 @@ function drawSpike(o) {
   ctx.lineTo(o.x + o.w, y);
   ctx.closePath();
   ctx.fill();
-  ctx.strokeStyle = 'rgba(0,0,0,0.25)';
-  ctx.lineWidth = 2;
+  ctx.strokeStyle = 'rgba(20,6,34,0.85)';
+  ctx.lineWidth = 2.5;
+  ctx.lineJoin = 'round';
   ctx.stroke();
   ctx.restore();
 }
@@ -2963,9 +3132,12 @@ function drawBlock(o) {
   grad.addColorStop(1, '#3c8fd8');
   ctx.fillStyle = grad;
   ctx.fillRect(o.x, y, o.w, o.h);
-  ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+  ctx.strokeStyle = 'rgba(255,255,255,0.55)';
   ctx.lineWidth = 2;
-  ctx.strokeRect(o.x + 1, y + 1, o.w - 2, o.h - 2);
+  ctx.strokeRect(o.x + 3, y + 3, o.w - 6, o.h - 6);
+  ctx.strokeStyle = 'rgba(20,6,34,0.85)';
+  ctx.lineWidth = 2.5;
+  ctx.strokeRect(o.x, y, o.w, o.h);
 }
 
 function drawShipWall(o) {
@@ -3794,6 +3966,7 @@ function tickEffects() {
   for (const t of floatTexts) { t.y -= 0.7; t.life--; }
   floatTexts = floatTexts.filter(t => t.life > 0);
   if (shakeTimer > 0) shakeTimer--;
+  tickColours();
 }
 
 function drawFlash() {
@@ -3941,6 +4114,7 @@ function renderScene() {
   }
   drawFloatTexts();
   if (shaking) ctx.restore();
+  drawPortalFlash();
   drawFlash();
 }
 

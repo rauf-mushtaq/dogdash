@@ -4,6 +4,7 @@ A browser canvas runner game. Open `index.html` in a browser, or serve the folde
 
 - 13 levels (Classic Meadow up to Crystal Cave), getting harder level by level, plus the gold **Chaos in the Mix** level (Insanity difficulty, 50 bones per run)
 - Portals switch you between 7 forms: dog, ship, spider, flappy, balloon, frog and drone
+- Every portal sweeps the whole scene (sky, scenery, ground, and the screen around the game) to a new colour, and the floor glow pulses with the music
 - Bones are earned by playing (+1 every 400 points, golden bones, balloons, the drone star) and spent on skins, revives and Chaos runs. There is no real money anywhere in the game
 - 29 dog skins, including patterned and accessory skins (Dalmatian, Beagle, Panda Pup, Pirate Pup, Royal Corgi…)
 - A best score is kept for every level
